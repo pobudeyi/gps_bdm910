@@ -1,0 +1,186 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * File Name          : freertos.c
+  * Description        : Code for freertos applications
+  ******************************************************************************
+  * @attention
+  *
+  * <h2><center>&copy; Copyright (c) 2019 STMicroelectronics.
+  * All rights reserved.</center></h2>
+  *
+  * This software component is licensed by ST under Ultimate Liberty license
+  * SLA0044, the "License"; You may not use this file except in compliance with
+  * the License. You may obtain a copy of the License at:
+  *                             www.st.com/SLA0044
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+/* Includes ------------------------------------------------------------------*/
+#include "FreeRTOS.h"
+#include "task.h"
+#include "main.h"
+#include "cmsis_os.h"
+#include "nmea_gprmc_analysis.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */     
+#include "bsp_uart.h"
+#include "usart.h" 
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+//任务优先级
+#define UART0_TASK_PRIO		4
+//任务堆栈大小	
+#define UART0_STK_SIZE 		256  
+//任务句柄
+TaskHandle_t UART0Task_Handler;
+//任务函数
+void uart0_task(void *pvParameters);
+
+//任务优先级
+#define UART2_TASK_PRIO		2
+//任务堆栈大小	
+#define UART2_STK_SIZE 		512  
+//任务句柄
+TaskHandle_t UART2Task_Handler;
+//任务函数
+void bsp_gps_task(void *pvParameters);
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+/* USER CODE BEGIN Variables */
+extern QueueHandle_t xSendQueue1;
+extern QueueHandle_t xSendQueue2;
+extern QueueHandle_t xSendQueue3;
+/* USER CODE END Variables */
+osThreadId defaultTaskHandle;
+
+/* Private function prototypes -----------------------------------------------*/
+/* USER CODE BEGIN FunctionPrototypes */
+//开始任务任务函数
+void start_task(void *pvParameters)
+{
+    taskENTER_CRITICAL();           //进入临界区
+    //创建UART0任务
+    xTaskCreate((TaskFunction_t )uart0_task,     	
+                (const char*    )"uart0_task",   	
+                (uint16_t       )UART0_STK_SIZE, 
+                (void*          )NULL,				
+                (UBaseType_t    )UART0_TASK_PRIO,	
+                (TaskHandle_t*  )&UART0Task_Handler);
+	
+	//gps任务//UART5 
+//	xTaskCreate((TaskFunction_t )bsp_gps_task,    	
+//                (const char*    )"bsp_gps_task",   	
+//                (uint16_t       )UART2_STK_SIZE, 
+//                (void*          )NULL,				
+//                (UBaseType_t    )UART2_TASK_PRIO,	
+//                (TaskHandle_t*  )&UART2Task_Handler);
+    taskEXIT_CRITICAL();            //退出临界区
+}
+
+//uart任务函数 （集中测试用，后续每个串口单独任务出来）
+void uart0_task(void *pvParameters)
+{
+	USART_RECEIVETYPE ucQueueMsgValue;
+    while(1)
+    {
+		xQueueReceive(xSendQueue1,(USART_RECEIVETYPE *)&ucQueueMsgValue,(TickType_t)portMAX_DELAY); 
+		if(ucQueueMsgValue.uart_no==1)
+			HAL_UART_Transmit_DMA(&huart1, ucQueueMsgValue.usartDMA_rxBuf,ucQueueMsgValue.rx_len);     
+		else if(ucQueueMsgValue.uart_no==2)
+			HAL_UART_Transmit_DMA(&huart2, ucQueueMsgValue.usartDMA_rxBuf,ucQueueMsgValue.rx_len);//收到Lora的信号直接打印出来，没有做任何控制处理，
+		else if(ucQueueMsgValue.uart_no==3)
+			HAL_UART_Transmit_DMA(&huart3, ucQueueMsgValue.usartDMA_rxBuf,ucQueueMsgValue.rx_len);      
+		vTaskDelay(10);
+    }
+}   
+/* USER CODE END FunctionPrototypes */
+
+void StartDefaultTask(void const * argument);
+
+void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
+
+/**
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
+void MX_FREERTOS_Init(void) {
+  /* USER CODE BEGIN Init */
+       
+  /* USER CODE END Init */
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+	xTaskCreate((TaskFunction_t )start_task,          //任务函数
+		(const char*    )"start_task",          //任务名称
+		(uint16_t       )START_STK_SIZE,        //任务堆栈大小
+		(void*          )NULL,                  //传递给任务函数的参数
+		(UBaseType_t    )START_TASK_PRIO,       //任务优先级
+		(TaskHandle_t*  )&StartTask_Handler);   //任务句柄   
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* definition and creation of defaultTask */
+	osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+}
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used 
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void const * argument)
+{
+
+  /* USER CODE BEGIN StartDefaultTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartDefaultTask */
+}
+
+/* Private application code --------------------------------------------------*/
+/* USER CODE BEGIN Application */
+     
+/* USER CODE END Application */
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
